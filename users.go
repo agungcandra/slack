@@ -240,6 +240,26 @@ func (api *Client) GetUserInfo(user string) (*User, error) {
 	return api.GetUserInfoContext(context.Background(), user)
 }
 
+// GetUserInfo will retrieve the complete user information by username
+func (api *Client) GetUserInfoByUsername(username string) (*User, error) {
+	channelID, scheduledMessageID, _, err := api.ScheduleMessage(username, "1661919574", MsgOptionText("sample dummpy message", false))
+	if err != nil {
+		return nil, err
+	}
+
+	api.DeleteScheduledMessage(&DeleteScheduledMessageParameters{
+		Channel:            channelID,
+		ScheduledMessageID: scheduledMessageID,
+	})
+
+	channelInfo, err := api.GetConversationInfo(channelID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	return api.GetUserInfo(channelInfo.User)
+}
+
 // GetUserInfoContext will retrieve the complete user information with a custom context
 func (api *Client) GetUserInfoContext(ctx context.Context, user string) (*User, error) {
 	values := url.Values{

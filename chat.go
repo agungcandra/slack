@@ -33,6 +33,9 @@ type chatResponseFull struct {
 	MessageTimeStamp   string `json:"message_ts"`                     //Ephemeral message timestamp
 	ScheduledMessageID string `json:"scheduled_message_id,omitempty"` //Scheduled message id
 	Text               string `json:"text"`
+	Message            struct {
+		UserID string `json:"user"`
+	} `json:"message"`
 	SlackResponse
 }
 
@@ -105,21 +108,47 @@ func (api *Client) DeleteMessageContext(ctx context.Context, channel, messageTim
 // ScheduleMessage sends a message to a channel.
 // Message is escaped by default according to https://api.slack.com/docs/formatting
 // Use http://davestevens.github.io/slack-message-builder/ to help crafting your message.
-func (api *Client) ScheduleMessage(channelID, postAt string, options ...MsgOption) (string, string, error) {
+func (api *Client) ScheduleMessage(channelID, postAt string, options ...MsgOption) (slackChannelID, scheduledMessageID, userID string, err error) {
 	return api.ScheduleMessageContext(context.Background(), channelID, postAt, options...)
 }
 
 // ScheduleMessageContext sends a message to a channel with a custom context
 //
 // For more details, see ScheduleMessage documentation.
-func (api *Client) ScheduleMessageContext(ctx context.Context, channelID, postAt string, options ...MsgOption) (string, string, error) {
-	respChannel, respTimestamp, _, err := api.SendMessageContext(
+func (api *Client) ScheduleMessageContext(ctx context.Context, channelID, postAt string, options ...MsgOption) (slackChannelID, scheduledMessageID, userID string, err error) {
+	response, err := api.SendScheduledMessageContext(
 		ctx,
 		channelID,
 		MsgOptionSchedule(postAt),
 		MsgOptionCompose(options...),
 	)
-	return respChannel, respTimestamp, err
+	return response.Channel, response.ScheduledMessageID, response.Message.UserID, err
+}
+
+// SendMessageContext more flexible method for configuring messages with a custom context.
+func (api *Client) SendScheduledMessageContext(ctx context.Context, channelID string, options ...MsgOption) (chatResponseFull, error) {
+	var (
+		req      *http.Request
+		parser   func(*chatResponseFull) responseParser
+		response chatResponseFull
+	)
+
+	req, parser, err := buildSender(api.endpoint, options...).BuildRequestContext(ctx, api.token, channelID)
+	if err != nil {
+		return response, err
+	}
+
+	if api.Debug() {
+		reqBody, err := ioutil.ReadAll(req.Body)
+		if err != nil {
+			return response, err
+		}
+		req.Body = ioutil.NopCloser(bytes.NewBuffer(reqBody))
+		api.Debugf("Sending request: %s", string(reqBody))
+	}
+
+	err = doPost(ctx, api.httpclient, req, parser(&response), api)
+	return response, err
 }
 
 // PostMessage sends a message to a channel.
